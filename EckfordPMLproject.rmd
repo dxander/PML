@@ -1,0 +1,159 @@
+---
+title: "PracticalMachineLearningProject"
+author: "Dxander"
+date: "Saturday, January 24, 2015"
+output: pdf_document
+---
+
+Executive Summary
+
+The purpose of this project is to analyze the activity of 6 participants to determine how well they perform activities.  The data are from accelerometers on the belt, forearm, and dumbell use of the 6 participants.  They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  
+
+Information on other uses of the data for this project can be found at http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+This project involves classification.  The goal is to classify the the manner in which the participant did the exercise.  
+If the exercise was performed exactly to specifications (Class A), throwing the elbows to the front (Class B), 
+lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and 
+throwing the hips to the front (Class E).  See (VBGUF 2015)
+
+
+Key points in the process are 1) Classify the manner in which the exercise was done.  2) The classification model should be built using features and cross-validataion.  3) As a performance measure calculate the out of sample error.  4) Finally, use the test data and the model to correctly classify 20 test cases.
+
+A resource for this project is the paper by Velloso, E; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitive Activity Recognition of Weight Lifting Exercises (2013)
+
+
+# Data Setup
+Load required packages and set random number generator to ensure reproduceability.
+
+```{r setlibrary}
+library(Hmisc)
+library(caret)
+library(kernlab)
+library(randomForest)
+library(corrplot)
+set.seed(9237)
+```
+
+set the working directory
+
+```{r setwd}
+setwd("E:/DataScientist/PracticalMachineLearning/Project")
+```
+
+```{r downloaddata}
+downloadDataset <- function(URL="", destFile="data.csv"){
+        if(!file.exists(destFile)){
+                download.file(URL, destFile, method="curl")
+        }else{
+                message("You already downloaded the data!")
+        }
+}
+
+trainURL<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+
+testURL <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+downloadDataset(trainURL, "pml-training.csv")
+
+downloadDataset(testURL, "pml-testing.csv")
+```
+
+# Load the data into R
+The original data set consist of lots of data marked "NA" and summary data that is not
+in the testing set.   This data is removed from the training set.
+Same procedures are performed on both training and final testing set.
+```{r intoR}
+training <- read.csv("pml-training.csv", na.strings=c("#DIV/0!","NA", "") )
+final_testing <- read.csv("pml-testing.csv", na.strings=c("#DIV/0!", "NA", "") )
+dim(training)
+dim(final_testing)
+summary(training)
+```
+
+```{r exploreData}
+training <- training[ ,colSums(is.na(training)) == 0]
+final_testing <- final_testing[ ,colSums(is.na(testing)) == 0]
+
+for(i in c(8:ncol(training)-1)) {training[,i] = as.numeric(as.character(training[,i]))}
+for(i in c(8:ncol(final_testing)-1)) {final_testing[,i] = as.numeric(as.character(testing[,i]))}
+
+training   <- training[,-c(1:7)]
+final_testing <- final_testing[,-c(1:7)]
+```
+
+
+Examine the feature set and create the model data
+```{r featureset}
+feature_set <- colnames(training[colSums(is.na(training)) == 0])[-(1:7)]
+model_data <- training[feature_set]
+feature_set
+
+inTrain <- createDataPartition(y=model_data$classe, p=0.6, list=FALSE )
+training <- model_data[inTrain,]
+testing <- model_data[-inTrain,]
+dim(training); dim(testing);
+```
+
+```{r plot}
+summary(training$classe)
+plot(training$classe, col=rgb((1:5)/5,0,(1:5)/5), main="Frequency Plot of Classe variable")
+```
+
+# Correlated Predictors
+```{r correlations}
+M <- abs(cor(training[,-length(training)]))
+diag(M) <- 0
+which(M > 0.8, arr.ind=T)
+
+correlMatrix <- cor(training[, -length(training)])
+corrplot(correlMatrix, order = "FPC", method = "circle", type = "lower", tl.cex = 0.8,  tl.col = rgb(0, 0, 0))
+
+```
+Although there are many correlated predictors because I am not a specialist in sports physics I do not know of 
+a way to combine the variables in a knowledgeable way.   So I will continue with the main tasks.
+
+
+# Construct model with 4-fold cross validation
+```{r buildmodel}
+model <- train(training$classe ~., data= training, method="rf", prox=TRUE,
+               trControl = trainControl(method = "cv", number =4, allowParallel=TRUE))
+
+model
+```
+# To calculate the prediction accuracy of the classification model
+# 1st classify training set
+```{r predict1}
+train_pred <- predict(model, training)
+confusionMatrix(train_pred, training$classe)
+```
+For the training set the in sample accuracy is 1 or 100%
+
+
+# 2nd classify testing set or out of sample accuracy
+```{r predict2}
+test_pred <- predict(model, testing)
+confusionMatrix(test_pred, testing$classe)
+```
+For the test set the out of sample accuracy is 0.998 or 99.8%
+
+
+
+## Prediction Assignment
+```{r predictFinal}
+answers <- predict(model, final_testing)
+answers <- as.character(answers)
+answers
+
+# Using the test program code provided
+pml_write_files = function(x){
+        n = length(x)
+        for(i in 1:n){
+                filename = paste0("problem_id_",i,".txt")
+                write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+        }
+}
+
+
+
+pml_write_files(answers)
+```
+
